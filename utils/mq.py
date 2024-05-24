@@ -16,15 +16,17 @@
         20230126 - Edited exception handling mechanism
         20230424 - Code fix
         20230503 - Enchancement
+        20230524 - Opt Out tfns
 """
 
 import os
+import json
 import datetime
 import subprocess
 import sys
 from .logging import Logging
 
-LOG = Logging.with_tfns(__name__)
+LOG = Logging(__name__)
 
 class MQ():
     __client_path = ""
@@ -92,7 +94,12 @@ class MQ():
         self.__message = message
 
     @classmethod
-    def from_json_config(cls, json_config, message_type = ''):
+    def from_json_config(cls, json_config_path, message_type = ''):
+        with open(json_config_path, 'rb') as f:
+            json_config = f.read()
+            
+        f.close()
+        json_config = json.loads(json_config)
         return cls(
             json_config['path']['client'],
             json_config['path']['java_archives'],
