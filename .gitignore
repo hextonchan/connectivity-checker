@@ -1,0 +1,9 @@
+venv/
+secrets/
+downloads/
+*.pyc
+*.log
+DATA/
+DOWNLOADS/
+logs/
+*.lock
