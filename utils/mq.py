@@ -14,6 +14,8 @@
         20230112 - Add Error Catching, DEBUG Logging, getter method; Strengthen code security
         20230119 - Re-Def. Msg Gen Time Type
         20230126 - Edited exception handling mechanism
+        20230424 - Code fix
+        20230503 - Enchancement
 """
 
 import os
@@ -88,14 +90,13 @@ class MQ():
         self.__message_generation_time = message_generation_time
         self.__correlation_id = correlation_id
         self.__message = message
-        pass
 
     @classmethod
-    def from_json_config(cls, client_path, class_path, trust_store_path, sender, message_type, json_config):
+    def from_json_config(cls, json_config, message_type = ''):
         return cls(
-            client_path,
-            class_path,
-            trust_store_path,
+            json_config['path']['client'],
+            json_config['path']['java_archives'],
+            json_config['path']['trust_store'],
             json_config['host'],
             json_config['port'],
             json_config['queue_manager_name'],
@@ -106,10 +107,41 @@ class MQ():
             json_config['trust_store_pwd'],
             json_config['address_ln1'],
             json_config['address_ln2'],
+            json_config['sender'],
+            message_type
+        )
+
+    @classmethod
+    def with_secret(cls,
+            json_secret,
+            path_client = '',
+            path_java_archives = '',
+            path_trust_store = '',
+            address_ln1 = '',
+            address_ln2 = '',
+            sender = '',
+            message_type = ''):
+        return cls(
+            path_client,
+            path_java_archives,
+            path_trust_store,
+            json_secret['host'],
+            json_secret['port'],
+            json_secret['queue_manager_name'],
+            json_secret['channel'],
+            json_secret['queue_producer_name'],
+            json_secret['user_name'],
+            json_secret['password'],
+            json_secret['trust_store_pwd'],
+            address_ln1,
+            address_ln2,
             sender,
             message_type
         )
 
+    def set_message_type(self, message_type):
+        self.__message_type = message_type
+    
     def set_message(self, message):
         self.__message = message
     
@@ -121,6 +153,9 @@ class MQ():
 
     def set_address_line_2(self, address_line_2):
         self.__address_line_2 = address_line_2
+
+    def set_payload(self, payload):
+        self.__payload = payload
 
     def get_correlation_id(self):
         return self.__correlation_id
@@ -152,26 +187,25 @@ class MQ():
     def get_payload(self):
         return self.__payload
 
-    def callback(self, message_generation_time = datetime.datetime.now()):
-
-        ## Variable Declaration
-        self.__message_generation_time = message_generation_time
-        payload = (
-            "\r\n\x01"
-            + self.__address_line_1
-            + "\r\n"
-            + self.__address_line_2
-            + " {}".format(self.__message_generation_time.strftime("%d%m%y"))
-            + "\r\n\x02"
-            + self.__message
-            + "=\x03") #MQ Accepted Payload Add ddmmyy by 23/02/14
-        environ = os.environ.copy()
-        environ["CLASSPATH"] = self.__class_path
-        message = (
+    def to_string(self):
+        return print(
+            "correlation_id: " + self.__correlation_id + "\n" +
+            "address_line_1: " + self.__address_line_1 + "\n" +
+            "address_line_2: " + self.__address_line_2 + "\n" +
+            "Message:\n" + self.__message + "\n" +
+            "Payload (If sent):\n" + self.__payload
+        )
+    
+    def to_byte(self):
+        return (
             '{\"sender\": \"' + self.__sender + 
             '\", \"msgGenTime\": \"'+ self.__message_generation_time.strftime("%Y-%m-%dT%H:%M:%S") +
             '\", \"msgType\": \"'+ self.__message_type  +
-            '\", \"payload\": \"'+ payload +
+            '\", \"payload\": \"'+ "\r\n\x01{}\r\n{} {}\r\n\x02{}=\x03".format(
+                self.__address_line_1,
+                self.__address_line_2,
+                self.__message_generation_time.strftime("%d%m%y"),
+                self.__message) +
             '\", \"correlationId\": \"'+ self.__correlation_id +
             '\", \"host\": \"' + self.__host +
             '\", \"port\": \"' + self.__port +
@@ -182,6 +216,14 @@ class MQ():
             '\", \"password\": \"' + self.__password +
             '\"}'
         ).encode("utf-8")
+
+    def callback(self, message_generation_time = datetime.datetime.now()):
+        ## Variable Declaration
+        self.__message_generation_time = message_generation_time
+        self.set_payload(self.to_byte())
+        
+        environ = os.environ.copy()
+        environ["CLASSPATH"] = self.__class_path
         command = [
             'java', '-Djavax.net.ssl.trustStoreType=jks',
             f'-Djavax.net.ssl.keyStore={self.__trust_store_path}',
@@ -189,12 +231,10 @@ class MQ():
             f'-Djavax.net.ssl.trustStore={self.__trust_store_path}',  
             f'-Djavax.net.ssl.trustStorePassword={self.__trust_store_password}', 
             '-Dcom.ibm.mq.cfg.useIBMCipherMappings=false', 
-            'Main', f'{message}', '2>&1'
+            'Main', f'{self.__payload}', '2>&1'
         ]
 
-        LOG.debug(str(type(message)) + ' ' + str(message))
-
-        self.__payload = message
+        LOG.debug(str(type(self.__payload)) + ' ' + str(self.__payload))
 
         ## Call MQ Java Object
         try:
@@ -213,10 +253,9 @@ class MQ():
 
             if (error != ''):
                 LOG.critical(error)
+                raise AssertionError(__name__, err_msg)
 
             LOG.info("==== [END] MQ Java Subprocess ====")
-
-            return self.__message_generation_time
 
         except FileNotFoundError:
             err_msg = '[Error 1] Failed to call MQ Java. Missing Library from ' + self.__client_path + '\nDEBUG - ' + str(sys.exc_info()[0]) + ' ' + str(sys.exc_info()[1])
@@ -226,27 +265,7 @@ class MQ():
             err_msg = '[Error 1] Unknown Exception when calling MQ Java.\nDEBUG - ' + str(sys.exc_info()[0]) + ' ' + str(sys.exc_info()[1])
             LOG.critical(err_msg)
             raise AssertionError(__name__, err_msg)
+        
+        return self.__message_generation_time
 
-    def to_string(self):
-        return print(
-            "correlation_id: " + self.__correlation_id + "\n" +
-            "address_line_1: " + self.__address_line_1 + "\n" +
-            "address_line_2: " + self.__address_line_2 + "\n" +
-            "Message:\n" + self.__message + "\n" +
-            "Payload (If sent):\n" + self.__payload
-        )
-    
-    def to_byte(self):
-        return (
-            '{\"sender\": \"' + self.__sender + 
-            '\", \"msgGenTime\": \"'+ self.__message_generation_time.strftime("%Y-%m-%dT%H:%M:%S") +
-            '\", \"msgType\": \"'+ self.__message_type  +
-            '\", \"payload\": \"'+ "\r\n\x01" + self.__address_line_1 + "\r\n" + self.__address_line_2  + "\r\n\x02" + self.__message + "=\x03" +
-            '\", \"correlationId\": \"'+ self.__correlation_id +
-            '\", \"host\": \"' + self.__host +
-            '\", \"port\": \"' + self.__port +
-            '\", \"queueManagerName\": \"' + self.__queue_manager_name +
-            '\", \"channel\": \"' + self.__channel +
-            '\", \"queueBsmSendName\": \"' + self.__queue_producer_name +
-            '\"}'
-        ).encode("utf-8")
+        
