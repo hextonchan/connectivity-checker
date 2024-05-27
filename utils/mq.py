@@ -260,7 +260,7 @@ class MQ():
 
             if (error != ''):
                 LOG.critical(error)
-                raise AssertionError(__name__, err_msg)
+                raise AssertionError(__name__, error)
 
             LOG.info("==== [END] MQ Java Subprocess ====")
 
