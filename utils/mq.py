@@ -17,6 +17,8 @@
         20230424 - Code fix
         20230503 - Enchancement
         20230524 - Opt Out tfns
+        20240618 - Bug Fix
+        20240705 - Stop using logging.debug
 """
 
 import os
@@ -255,24 +257,25 @@ class MQ():
                 cwd = self.__client_path
             ).communicate()
             
-            LOG.info('[Success 0] Message: ' + self.__correlation_id + ' successfully sent to remote side.')
-            LOG.debug(output)
+            LOG.info(output)
 
             if (error != ''):
                 LOG.critical(error)
                 raise AssertionError(__name__, error)
+            else:
+                LOG.info('[Success 0] Message: ' + self.__correlation_id + ' successfully sent to remote side.')
 
             LOG.info("==== [END] MQ Java Subprocess ====")
 
         except FileNotFoundError:
-            err_msg = '[Error 1] Failed to call MQ Java. Missing Library from ' + self.__client_path + '\nDEBUG - ' + str(sys.exc_info()[0]) + ' ' + str(sys.exc_info()[1])
+            err_msg = '[Error 1] Failed to call MQ Java. Missing Library from ' + self.__client_path
             LOG.error(err_msg)
+            LOG.info('DEBUG - {} {}'.format(str(sys.exc_info()[0]), str(sys.exc_info()[1])))
             raise ImportError(__name__, err_msg)
         except:
-            err_msg = '[Error 1] Unknown Exception when calling MQ Java.\nDEBUG - ' + str(sys.exc_info()[0]) + ' ' + str(sys.exc_info()[1])
+            err_msg = '[Error 1] Unknown Exception when calling MQ Java.'
             LOG.critical(err_msg)
+            LOG.info('DEBUG - {} {}'.format(str(sys.exc_info()[0]), str(sys.exc_info()[1])))
             raise AssertionError(__name__, err_msg)
         
         return self.__message_generation_time
-
-        
